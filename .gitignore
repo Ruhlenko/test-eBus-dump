@@ -1,3 +1,9 @@
+# ICP DAS console application
+7188??.*
+
+# Turbo C context file
+*.dsk
+
 # Compiled Object files
 *.slo
 *.lo
