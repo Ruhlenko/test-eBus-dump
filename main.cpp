@@ -66,42 +66,42 @@ void main()
 
     switch (mode)
     {
-      case 1: // Source address
+      case 0: // Source address
         printCom(DUMP, ">%02X", b);
         mode++;
         break;
 
-      case 2: // Destination address
-      case 3: // Primary command
+      case 1: // Destination address
+      case 2: // Primary command
         printCom(DUMP, " %02X", b);
         mode++;
         break;
 
-      case 4: // Secondary command
+      case 3: // Secondary command
         printCom(DUMP, "%02X", b);
         mode++;
         break;
 
-      case 5: // No of data bytes from source
-      case 9: // No of data bytes from destination
+      case 4: // No of data bytes from source
+      case 8: // No of data bytes from destination
         printCom(DUMP, " %u [", b);
         bytes = b;
         mode += (bytes ? 1 : 2);
         break;
 
-      case  6: // Data bytes from source
-      case 10: // Data bytes from destination
+      case 5: // Data bytes from source
+      case 9: // Data bytes from destination
         printCom(DUMP, " %02X", b);
         if (!--bytes) mode++;
         break;
 
-      case  7: // CRC from source
-      case 11: // CRC from destination
+      case  6: // CRC from source
+      case 10: // CRC from destination
         printCom(DUMP, " ] {%02X}", b);
         mode++;
         break;
 
-      case  8: // ACK from destination
+      case  7: // ACK from destination
         if (b == 0x00)
           ToComStr(DUMP, " <ACK");
         else if (b == 0xFF)
@@ -111,7 +111,7 @@ void main()
         mode++;
         break;
 
-      case 12: // ACK from source
+      case 11: // ACK from source
         if (b == 0x00)
           ToComStr(DUMP, " >ACK");
         else if (b == 0xFF)
