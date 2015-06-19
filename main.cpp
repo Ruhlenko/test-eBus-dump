@@ -1,7 +1,16 @@
 #include "minios7.h"
+#include <stdio.h>
+#include <string.h>
 
 #define EBUS 1
 #define DUMP 2
+
+#define DUMP_BUF_SIZE 255
+char dumpBuf[DUMP_BUF_SIZE];
+
+void printDump(char* fmt, BYTE data);
+void strDump(char* str);
+void clearDump();
 
 int MainQuit = 0;
 //----------------------------------------------- main
@@ -16,24 +25,29 @@ void main()
 
   unsigned long t = GetTimeTicks();
   unsigned long dt;
-  unsigned char b;
+  BYTE b;
 
   int a9seq = 0;
   int mode = 0;
   int bytes = 0;
 
+  BYTE srcAddr;
+  BYTE dstAddr;
+  WORD cmd;
+
   for(;;)
   {
-    // SYN 40-50ms
     // bytes 4-5 ms
-    if ((GetTimeTicks() - t) > 100ul)
+    // SYN 40-50ms
+    // AUTOSYN ?
+    if ((GetTimeTicks() - t) > 500ul)
       LedOff();
 
     if (mode)
       Led2On();
     else
       Led2Off();
-    
+
     if (!IsCom(EBUS))
       continue;
 
@@ -45,8 +59,13 @@ void main()
     {
       if (mode != 0)
       {
+      	if (1) // <---- Filter here
+      	{
+	        strDump("\r\n");
+  	      ToComStr(DUMP, dumpBuf);
+				}
+        clearDump();
         mode = 0;
-        ToComStr(DUMP, "\r\n");
       }
       continue;
     }
@@ -67,64 +86,91 @@ void main()
     switch (mode)
     {
       case 0: // Source address
-        printCom(DUMP, ">%02X", b);
+        printDump(">%02X", b);
+        srcAddr = b;
         mode++;
         break;
 
       case 1: // Destination address
+        printDump(" %02X", b);
+        dstAddr = b;
+        mode++;
+        break;
+
       case 2: // Primary command
-        printCom(DUMP, " %02X", b);
+        printDump(" %02X", b);
+        cmd = b;
         mode++;
         break;
 
       case 3: // Secondary command
-        printCom(DUMP, "%02X", b);
+        printDump("%02X", b);
+        cmd = (cmd << 8) | b;
         mode++;
         break;
 
       case 4: // No of data bytes from source
       case 8: // No of data bytes from destination
-        printCom(DUMP, " %u [", b);
+        printDump(" %u [", b);
         bytes = b;
         mode += (bytes ? 1 : 2);
         break;
 
       case 5: // Data bytes from source
       case 9: // Data bytes from destination
-        printCom(DUMP, " %02X", b);
+        printDump(" %02X", b);
         if (!--bytes) mode++;
         break;
 
       case  6: // CRC from source
       case 10: // CRC from destination
-        printCom(DUMP, " ] {%02X}", b);
+        printDump(" ] {%02X}", b);
         mode++;
         break;
 
       case  7: // ACK from destination
         if (b == 0x00)
-          ToComStr(DUMP, " <ACK");
+          strDump(" <ACK");
         else if (b == 0xFF)
-          ToComStr(DUMP, " <NAK");
+          strDump(" <NAK");
         else
-          printCom(DUMP, " <?%02X", b);
+          printDump(" <?%02X", b);
         mode++;
         break;
 
       case 11: // ACK from source
         if (b == 0x00)
-          ToComStr(DUMP, " >ACK");
+          strDump(" >ACK");
         else if (b == 0xFF)
-          ToComStr(DUMP, " >NAK");
+          strDump(" >NAK");
         else
-          printCom(DUMP, " >?%02X", b);
+          printDump(" >?%02X", b);
         mode++;
         break;
 
       default:
-        printCom(DUMP, " %02X", b);
+        printDump(" %02X", b);
         break;
 
     } // end switch
   } // end for(;;)
 } // end main
+
+
+
+void printDump(const char* fmt, BYTE data)
+{
+	char str[DUMP_BUF_SIZE];
+	sprintf(str, fmt, data);
+	strDump(str);
+}
+
+void strDump(char* str)
+{
+	strcat(dumpBuf, str);
+}
+
+void clearDump()
+{
+	dumpBuf[0] = '\0';
+}
