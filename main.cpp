@@ -5,10 +5,12 @@
 #define EBUS 1
 #define DUMP 2
 
-#define DUMP_BUF_SIZE 255
-char dumpBuf[DUMP_BUF_SIZE];
+#define SYN 0xAA
 
-void printDump(char* fmt, BYTE data);
+#define IO_BUF_SIZE 255
+char ioBuf[IO_BUF_SIZE];
+
+void printDump(const char* fmt, BYTE data);
 void strDump(char* str);
 void clearDump();
 
@@ -28,7 +30,8 @@ void main()
   BYTE b;
 
   int a9seq = 0;
-  int mode = 0;
+  int rcvMode = 0;
+  int sndMode = 0;
   int bytes = 0;
 
   BYTE srcAddr;
@@ -43,10 +46,16 @@ void main()
     if ((GetTimeTicks() - t) > 500ul)
       LedOff();
 
-    if (mode)
+    if (rcvMode)
       Led2On();
     else
       Led2Off();
+
+		if (IsCom(DUMP))
+		{
+			b = ReadCom(DUMP);
+			if (b == '1') sndMode = 1;
+		}
 
     if (!IsCom(EBUS))
       continue;
@@ -55,21 +64,35 @@ void main()
     LedOn();
     b = ReadCom(EBUS);
 
-    if (b == 0xAA)
+    if (b == 0xAA) // SYN
     {
-      if (mode != 0)
+      if (rcvMode != 0)
       {
-      	if (1) // <---- Filter here
+      	if (/*srcAddr == 0x10*/ dstAddr==0x26 /* && !(dstAddr==0x3F || dstAddr==0x7F)*/ /*cmd==0xB504 && ioBuf[16] == '1' && ioBuf[17] == '6'*/) // <---- Filter here
       	{
 	        strDump("\r\n");
-  	      ToComStr(DUMP, dumpBuf);
+  	      ToComStr(DUMP, ioBuf);
 				}
         clearDump();
-        mode = 0;
+        rcvMode = 0;
       }
+			if (sndMode == 1)
+			{
+				ioBuf[0] = 0x10;
+				ioBuf[1] = 0x23;
+				ioBuf[2] = 0x07;
+				ioBuf[3] = 0x04;
+				ioBuf[4] = 0x00;
+				ioBuf[5] = 0x47;
+				ioBuf[6] = '\0';
+				ToComBufn(EBUS, ioBuf, 7);
+				sndMode++;
+				clearDump();
+				rcvMode = 0;
+			}
       continue;
     }
-    else if (b == 0xA9)
+    else if (0xA9 == b)
     {
       a9seq = 1;
       continue;
@@ -83,69 +106,79 @@ void main()
         b = 0xAA;
     }
 
-    switch (mode)
+    switch (rcvMode)
     {
-      case 0: // Source address
+      case 0: // Master address
         printDump(">%02X", b);
         srcAddr = b;
-        mode++;
+        rcvMode++;
         break;
 
-      case 1: // Destination address
+      case 1: // Slave address
         printDump(" %02X", b);
         dstAddr = b;
-        mode++;
+        rcvMode++;
         break;
 
       case 2: // Primary command
         printDump(" %02X", b);
         cmd = b;
-        mode++;
+        rcvMode++;
         break;
 
       case 3: // Secondary command
         printDump("%02X", b);
         cmd = (cmd << 8) | b;
-        mode++;
+        rcvMode++;
         break;
 
-      case 4: // No of data bytes from source
-      case 8: // No of data bytes from destination
+      case 4: // No of data bytes from master
+      case 8: // No of data bytes from slave
         printDump(" %u [", b);
         bytes = b;
-        mode += (bytes ? 1 : 2);
+        rcvMode += (bytes ? 1 : 2);
         break;
 
-      case 5: // Data bytes from source
-      case 9: // Data bytes from destination
+      case 5: // Data bytes from master
+      case 9: // Data bytes from slave
         printDump(" %02X", b);
-        if (!--bytes) mode++;
+        if (!--bytes) rcvMode++;
         break;
 
-      case  6: // CRC from source
-      case 10: // CRC from destination
+      case  6: // CRC from master
         printDump(" ] {%02X}", b);
-        mode++;
+        rcvMode++;
         break;
 
-      case  7: // ACK from destination
+      case  7: // ACK from slave
         if (b == 0x00)
           strDump(" <ACK");
         else if (b == 0xFF)
           strDump(" <NAK");
         else
           printDump(" <?%02X", b);
-        mode++;
+        rcvMode++;
         break;
 
-      case 11: // ACK from source
+      case 10: // CRC from slave
+        printDump(" ] {%02X}", b);
+        rcvMode++;
+        if (sndMode == 2)
+        {
+        	ToCom(EBUS, 0x00);
+        	ToCom(EBUS, 0xAA);
+        	sndMode = 0;
+        }
+        break;
+
+      case 11: // ACK from master
         if (b == 0x00)
           strDump(" >ACK");
         else if (b == 0xFF)
           strDump(" >NAK");
         else
           printDump(" >?%02X", b);
-        mode++;
+        rcvMode++;
         break;
 
       default:
@@ -160,17 +193,17 @@ void main()
 
 void printDump(const char* fmt, BYTE data)
 {
-	char str[DUMP_BUF_SIZE];
+	char str[IO_BUF_SIZE];
 	sprintf(str, fmt, data);
 	strDump(str);
 }
 
 void strDump(char* str)
 {
-	strcat(dumpBuf, str);
+	strcat(ioBuf, str);
 }
 
 void clearDump()
 {
-	dumpBuf[0] = '\0';
+	ioBuf[0] = '\0';
 }
